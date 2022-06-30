@@ -122,3 +122,6 @@ artifacts
 deployments/localhost/
 
 transactions.md
+.certora*
+last_conf*
+resource_errors.json
