@@ -1,6 +1,6 @@
 
 certoraRun contracts/Endpoint.sol  \
-    --verify Endpoint:certora/specs/complexity.spec \
+    --verify Endpoint:certora/spec/complexity.spec \
     --solc solc7.6 \
     --optimistic_loop \
     --staging  \

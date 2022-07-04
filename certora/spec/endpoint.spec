@@ -43,6 +43,12 @@ methods{
 invariant sendReceiveSeparate()
     !(isReceivingPayload() && isSendingPayload())
 
+invariant NonceNotZero(uint16 ID, bytes dst)
+    getInboundNonce(ID, dst) !=0
+    filtered {f -> !f.isView}
+    {
+        preserved{ require dst.length <= 7;}
+    }
 
 rule whoChangedStoredPayLoad(method f, uint16 ID, bytes dst)
 filtered {f -> !f.isView}
@@ -112,14 +118,18 @@ rule retryPayLoadSucceedsOnlyOnce()
 {
     env e; env e2;
     calldataarg args;
-    retryPayload(e, args);
-    retryPayload@withrevert(e2, args);
+    uint16 chainID;
+    bytes srcAddress;
+    bytes payLoad;
+
+    require payLoad.length <= 7;
+    require srcAddress.length <= 7;
+
+    retryPayload(e, chainID, srcAddress, payLoad);
+    retryPayload@withrevert(e2, chainID, srcAddress, payLoad);
     assert lastReverted;
 }
 
-invariant NonceNotZero(uint16 ID, bytes dst)
-    getInboundNonceHar(ID, dst) != 0 //&& getOutboundNonce(ID, dst) != 0
-filtered {f -> !f.isView}
 rule oneInNonceAtATime(method f, uint16 ID, bytes dst)
 filtered {f -> !f.isView}
 {
