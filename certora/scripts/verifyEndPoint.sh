@@ -10,6 +10,7 @@ certoraRun certora/harness/EndpointHarness.sol \
      --optimistic_loop \
      --loop_iter 2 \
      $RULE  \
+     --settings -byteMapHashingPrecision=7 \
      --msg "Endpoint -$RULE"
 
     #certora/helpers/DummyERC20A.sol \

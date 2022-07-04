@@ -11,8 +11,12 @@ methods{
     isReceivingPayload() returns (bool) envfree
     getChainId() returns (uint16) envfree
     getStoredPayLoad(uint16, bytes) returns (uint64, address, bytes32) envfree
-    getInboundNonceHar(uint16, bytes) returns (uint64) envfree
+    bytes2Address(bytes) returns (address) envfree
+    getInboundNonce(uint16, bytes) returns (uint64) envfree
     getOutboundNonce(uint16, address) returns (uint64) envfree
+    getReceiveVersion(address) returns (uint16) envfree
+    getSendVersion(address) returns (uint16) envfree
+    getReceiveLibraryAddress(address) returns (address) envfree
         
     // Messaging library
     send(address, uint64, uint16, bytes, bytes, address, address, bytes) => NONDET
@@ -21,7 +25,7 @@ methods{
     getConfig(uint16, address, uint256) returns (bytes)
 
     // Receiver
-     lzReceive(uint16, bytes, uint64, bytes) => NONDET
+    lzReceive(uint16, bytes, uint64, bytes) => NONDET
 }
 
 ////////////////////////////////////////////////////////////////////////////
@@ -35,6 +39,10 @@ methods{
 ////////////////////////////////////////////////////////////////////////////
 //                       Rules                                            //
 ////////////////////////////////////////////////////////////////////////////
+
+invariant sendReceiveSeparate()
+    !(isReceivingPayload() && isSendingPayload())
+
 
 rule whoChangedStoredPayLoad(method f, uint16 ID, bytes dst)
 filtered {f -> !f.isView}
@@ -53,13 +61,15 @@ filtered {f -> !f.isView}
 }
 
 rule whoChangedInNonce(method f, uint16 ID, bytes dst)
-filtered {f -> !f.isView}
+filtered{f -> !f.isView}
 {
     env e;
     calldataarg args;
-    uint64 inNonce1 = getInboundNonceHar(ID, dst);
+    require dst.length <=7;
+
+    uint64 inNonce1 = getInboundNonce(ID, dst);
         f(e, args);
-    uint64 inNonce2 = getInboundNonceHar(ID, dst);
+    uint64 inNonce2 = getInboundNonce(ID, dst);
 
     assert inNonce1 == inNonce2,
     "function ${f} changed inbound Nonce";
@@ -78,6 +88,26 @@ filtered {f -> !f.isView}
     "function ${f} changed outbound Nonce";
 }
 
+rule whoChangedLibrary(method f, uint16 chainID)
+{
+    env e;
+    calldataarg args;
+    address Lib1 = libraryLookup(e, chainID);
+        f(e, args);
+    address Lib2 = libraryLookup(e, chainID);
+    assert Lib1 == Lib2, "function ${f} changed library lookup";
+}
+
+rule whoChangedLibraryAddress(method f, address UA)
+{
+    env e;
+    calldataarg args;
+    address Lib1 = getReceiveLibraryAddress(UA);
+        f(e, args);
+    address Lib2 = getReceiveLibraryAddress(UA);
+    assert Lib1 == Lib2, "function ${f} changed library address";
+}
+
 rule retryPayLoadSucceedsOnlyOnce()
 {
     env e; env e2;
@@ -90,6 +120,43 @@ rule retryPayLoadSucceedsOnlyOnce()
 invariant NonceNotZero(uint16 ID, bytes dst)
     getInboundNonceHar(ID, dst) != 0 //&& getOutboundNonce(ID, dst) != 0
 filtered {f -> !f.isView}
+rule oneInNonceAtATime(method f, uint16 ID, bytes dst)
+filtered {f -> !f.isView}
+{
+    env e;
+    calldataarg args;
+    uint16 ID2; bytes dst2;
+    require dst.length <=7;
+    require dst2.length <=7;
+
+    uint64 inNonce1_A = getInboundNonce(ID, dst);
+    uint64 inNonce2_A = getInboundNonce(ID2, dst2);
+        f(e, args);
+    uint64 inNonce1_B = getInboundNonce(ID, dst);
+    uint64 inNonce2_B = getInboundNonce(ID2, dst2);
+    
+    assert  inNonce1_A != inNonce1_B && 
+            inNonce2_A != inNonce2_B =>
+            ID == ID2 && bytes2Address(dst) == bytes2Address(dst2);
+}
+
+rule oneOutNonceAtATime(method f, uint16 ID, address dst)
+filtered {f -> !f.isView}
+{
+    env e;
+    calldataarg args;
+    uint16 ID2; address dst2;
+
+    uint64 inNonce1_A = getOutboundNonce(ID, dst);
+    uint64 inNonce2_A = getOutboundNonce(ID2, dst2);
+        f(e, args);
+    uint64 inNonce1_B = getOutboundNonce(ID, dst);
+    uint64 inNonce2_B = getOutboundNonce(ID2, dst2);
+    
+    assert  inNonce1_A != inNonce1_B && 
+            inNonce2_A != inNonce2_B =>
+            ID == ID2 && dst == dst2;
+}
 
 ////////////////////////////////////////////////////////////////////////////
 //                       Functions                                        //
