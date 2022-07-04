@@ -87,6 +87,10 @@ rule retryPayLoadSucceedsOnlyOnce()
     assert lastReverted;
 }
 
+invariant NonceNotZero(uint16 ID, bytes dst)
+    getInboundNonceHar(ID, dst) != 0 //&& getOutboundNonce(ID, dst) != 0
+filtered {f -> !f.isView}
+
 ////////////////////////////////////////////////////////////////////////////
 //                       Functions                                        //
 ////////////////////////////////////////////////////////////////////////////
