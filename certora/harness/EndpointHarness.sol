@@ -15,8 +15,8 @@ contract EndpointHarness is Endpoint {
         return (sp.payloadLength, sp.dstAddress, sp.payloadHash);
     }
 
-    function getInboundNonceHar(uint16 _srcChainId, bytes memory _srcAddress) 
-    external view returns (uint64) {
-        return inboundNonce[_srcChainId][_srcAddress];
+    function bytes2Address(bytes memory address_bytes) external view returns (address)
+    {
+        return abi.decode(address_bytes, (address));
     }
 }

@@ -5,7 +5,8 @@ certoraRun certora/harness/EndpointHarness.sol \
      --optimistic_loop \
      --loop_iter 2 \
      --send_only \
-     --msg "Endpoint"
+     --rule whoChangedInNonce \
+     --msg "whoChangedInNonce"
 
     #certora/helpers/DummyERC20A.sol \
     #certora/helpers/DummyERC20B.sol \
