@@ -5,8 +5,8 @@ certoraRun certora/harness/EndpointHarness.sol \
      --optimistic_loop \
      --loop_iter 2 \
      --send_only \
-     --rule whoChangedInNonce \
-     --msg "whoChangedInNonce"
+     --settings -byteMapHashingPrecision=7 \
+     --msg "LayerZero"
 
     #certora/helpers/DummyERC20A.sol \
     #certora/helpers/DummyERC20B.sol \

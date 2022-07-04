@@ -25,7 +25,7 @@ methods{
     getConfig(uint16, address, uint256) returns (bytes)
 
     // Receiver
-     lzReceive(uint16, bytes, uint64, bytes) => NONDET
+    lzReceive(uint16, bytes, uint64, bytes) => NONDET
 }
 
 ////////////////////////////////////////////////////////////////////////////
@@ -61,10 +61,12 @@ filtered {f -> !f.isView}
 }
 
 rule whoChangedInNonce(method f, uint16 ID, bytes dst)
-filtered {!f -> f.isView}
+filtered{f -> !f.isView}
 {
     env e;
     calldataarg args;
+    require dst.length <=7;
+
     uint64 inNonce1 = getInboundNonce(ID, dst);
         f(e, args);
     uint64 inNonce2 = getInboundNonce(ID, dst);
@@ -121,6 +123,8 @@ filtered {f -> !f.isView}
     env e;
     calldataarg args;
     uint16 ID2; bytes dst2;
+    require dst.length <=7;
+    require dst2.length <=7;
 
     uint64 inNonce1_A = getInboundNonce(ID, dst);
     uint64 inNonce2_A = getInboundNonce(ID2, dst2);
