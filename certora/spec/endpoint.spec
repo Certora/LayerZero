@@ -117,9 +117,16 @@ rule retryPayLoadSucceedsOnlyOnce()
     assert lastReverted;
 }
 
-invariant NonceNotZero(uint16 ID, bytes dst)
-    getInboundNonceHar(ID, dst) != 0 //&& getOutboundNonce(ID, dst) != 0
+invariant NonceNotZero(uint16 ID, bytes dst, address destination)
+    bytes2Address(dst) == destination => getInboundNonce(ID, dst) != 0 && getOutboundNonce(ID, destination) != 0
 filtered {f -> !f.isView}
+{
+    preserved{
+    require dst.length <=7; //tool limitatiions
+    require getInboundNonce(ID, dst) < max_uint64 && getOutboundNonce(ID, destination) < max_uint64; //overflow!
+    }
+}
+
 rule oneInNonceAtATime(method f, uint16 ID, bytes dst)
 filtered {f -> !f.isView}
 {
