@@ -1,17 +1,13 @@
-if [[ "$1" ]]
-then
-    RULE="--rule $1"
-fi
-
 certoraRun certora/harness/EndpointHarness.sol \
      --verify EndpointHarness:certora/spec/endpoint.spec \
      --solc solc7.6 \
      --staging \
      --optimistic_loop \
      --loop_iter 2 \
-     $RULE  \
+     --send_only \
+     --rule sendReceiveEqualNonce \
      --settings -byteMapHashingPrecision=7 \
-     --msg "Endpoint -$RULE"
+     --msg "sendReceiveEqualNonce"
 
     #certora/helpers/DummyERC20A.sol \
     #certora/helpers/DummyERC20B.sol \

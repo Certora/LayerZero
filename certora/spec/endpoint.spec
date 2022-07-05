@@ -43,6 +43,12 @@ methods{
 invariant sendReceiveSeparate()
     !(isReceivingPayload() && isSendingPayload())
 
+invariant NonceNotZero(uint16 ID, bytes dst)
+    getInboundNonce(ID, dst) !=0
+    filtered {f -> !f.isView}
+    {
+        preserved{ require dst.length <= 7;}
+    }
 
 rule whoChangedStoredPayLoad(method f, uint16 ID, bytes dst)
 filtered {f -> !f.isView}
@@ -112,8 +118,15 @@ rule retryPayLoadSucceedsOnlyOnce()
 {
     env e; env e2;
     calldataarg args;
-    retryPayload(e, args);
-    retryPayload@withrevert(e2, args);
+    uint16 chainID;
+    bytes srcAddress;
+    bytes payLoad;
+
+    require payLoad.length <= 7;
+    require srcAddress.length <= 7;
+
+    retryPayload(e, chainID, srcAddress, payLoad);
+    retryPayload@withrevert(e2, chainID, srcAddress, payLoad);
     assert lastReverted;
 }
 
@@ -165,6 +178,65 @@ filtered {f -> !f.isView}
             ID == ID2 && dst == dst2;
 }
 
+rule receivePayLoadSuccessStep(uint16 srcChainID, uint64 nonce)
+{
+    env e;
+    bytes payload; require payload.length <=7;
+    uint gasLimit;
+    address dstAddress;
+    bytes srcAddress; require srcAddress.length <=7;
+
+    receivePayload(e, srcChainID, srcAddress, 
+        dstAddress, nonce, gasLimit, payload);
+    
+    receivePayload@withrevert(e, srcChainID, srcAddress, 
+        dstAddress, nonce+1, gasLimit, payload);
+
+    assert !lastReverted;
+}
+
+rule sendReceiveEqualNonce(uint16 srcChainID, uint16 dstChainID)
+{
+    env e;
+    bytes srcAddress; require srcAddress.length <= 7;
+    bytes _destination; require _destination.length <= 7;
+    bytes _adapterParams; require _adapterParams.length <= 7;
+    bytes _payload; require _payload.length <= 7;
+    uint64 nonce;
+    uint gasLimit;
+    address dstAddress;
+    address _zroPaymentAddress;
+    address _refundAddress;
+
+    uint64 outNonce_A = getOutboundNonce(dstChainID, e.msg.sender);
+    uint64 inNonce_A = getInboundNonce(srcChainID, srcAddress);
+        send(e, dstChainID, _destination, _payload, _refundAddress, _zroPaymentAddress, _adapterParams);
+        receivePayload(e, srcChainID, srcAddress, dstAddress, nonce, gasLimit, _payload);
+    uint64 outNonce_B = getOutboundNonce(dstChainID, e.msg.sender);
+    uint64 inNonce_B = getInboundNonce(srcChainID, srcAddress);
+
+    assert outNonce_A == inNonce_A => outNonce_B == inNonce_B && 
+            inNonce_A + 1 == inNonce_B &&
+            outNonce_A + 1 == outNonce_B;
+}
+/*
+rule receivePayLoadCheck()
+{
+    env e;
+    calldataarg args;
+    uint64 Length1; uint64 Length2;
+    address Address1; address Address2;
+    bytes32 Hash1; bytes32 Hash2;
+    uint16 srcChainId; bytes srcAddress;
+    require srcAddress.length <= 7;
+
+    Length1, Address1, Hash1 = getStoredPayLoad(srcChainId, srcAddress);
+        receivePayload(e, args);
+    Length2, Address2, Hash2 = getStoredPayLoad(srcChainId, srcAddress);
+
+    assert Length1 == Length2 && Address1 == Address2 && Hash1 == Hash2;
+}
+*/
 ////////////////////////////////////////////////////////////////////////////
 //                       Functions                                        //
 ////////////////////////////////////////////////////////////////////////////
