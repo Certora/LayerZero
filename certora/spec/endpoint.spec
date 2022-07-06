@@ -43,13 +43,6 @@ methods{
 invariant sendReceiveSeparate()
     !(isReceivingPayload() && isSendingPayload())
 
-invariant NonceNotZero(uint16 ID, bytes dst)
-    getInboundNonce(ID, dst) !=0
-    filtered {f -> !f.isView}
-    {
-        preserved{ require dst.length <= 7;}
-    }
-
 rule whoChangedStoredPayLoad(method f, uint16 ID, bytes dst)
 filtered {f -> !f.isView}
 {
@@ -117,7 +110,7 @@ rule whoChangedLibraryAddress(method f, address UA)
 rule retryPayLoadSucceedsOnlyOnce()
 {
     env e; env e2;
-    calldataarg args;
+
     uint16 chainID;
     bytes srcAddress;
     bytes payLoad;
@@ -127,6 +120,7 @@ rule retryPayLoadSucceedsOnlyOnce()
 
     retryPayload(e, chainID, srcAddress, payLoad);
     retryPayload@withrevert(e2, chainID, srcAddress, payLoad);
+    
     assert lastReverted;
 }
 
@@ -219,6 +213,30 @@ rule sendReceiveEqualNonce(uint16 srcChainID, uint16 dstChainID)
             inNonce_A + 1 == inNonce_B &&
             outNonce_A + 1 == outNonce_B;
 }
+
+rule receiveAfterRetryFail(uint16 srcChainID)
+{
+ env e;
+
+    bytes srcAddress; require srcAddress.length <= 7;
+    bytes payLoad;  require payLoad.length <= 7;
+    address dstAddress;
+    uint64 nonce;
+    uint gasLimit;
+
+    retryPayload@withrevert(e, srcChainID, srcAddress, payLoad);
+    bool retryReverted = lastReverted;
+
+    uint16 _srcChainID;
+    bytes _srcAddress; require _srcAddress.length <= 7;
+    forceResumeReceive(e,_srcChainID, _srcAddress);
+
+    receivePayload@withrevert(e, srcChainID, srcAddress, dstAddress, nonce, gasLimit, payLoad);
+    bool receiveReverted = lastReverted;
+
+    assert retryReverted && !receiveReverted => _srcChainID == srcChainID && bytes2Address(_srcAddress) == bytes2Address(srcAddress);
+}
+
 /*
 rule receivePayLoadCheck()
 {
