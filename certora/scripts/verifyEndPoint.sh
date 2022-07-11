@@ -6,8 +6,9 @@ certoraRun certora/harness/EndpointHarness.sol \
      --loop_iter 2 \
      --send_only \
      --rule_sanity basic \
-     --settings -byteMapHashingPrecision=32 \
-     --msg "LayerZero"
+     --rule sendReceiveEqualNonce \
+     --settings -byteMapHashingPrecision=7 \
+     --msg "sendReceiveEqualNonce"
 
     #certora/helpers/DummyERC20A.sol \
     #certora/helpers/DummyERC20B.sol \
