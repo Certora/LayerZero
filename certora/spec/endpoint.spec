@@ -32,6 +32,8 @@ methods{
 //                       Definitions                                      //
 ////////////////////////////////////////////////////////////////////////////
 
+definition MAX_BYTES() returns uint = 32;
+
 ////////////////////////////////////////////////////////////////////////////
 //                       Ghosts                                           //
 ////////////////////////////////////////////////////////////////////////////
@@ -42,6 +44,17 @@ methods{
 
 invariant sendReceiveSeparate()
     !(isReceivingPayload() && isSendingPayload())
+
+invariant NonceNotZero(uint16 ID, bytes dst, address destination)
+    bytes2Address(dst) == destination => 
+    ( getInboundNonce(ID, dst) != 0 && getOutboundNonce(ID, destination) != 0 )
+{
+    preserved
+    {
+        require dst.length <= MAX_BYTES(); // tool limitations
+        require getInboundNonce(ID, dst) < max_uint64 && getOutboundNonce(ID, destination) < max_uint64; //overflow!
+    }
+}
 
 rule whoChangedStoredPayLoad(method f, uint16 ID, bytes dst)
 filtered {f -> !f.isView}
@@ -64,7 +77,7 @@ filtered{f -> !f.isView}
 {
     env e;
     calldataarg args;
-    require dst.length <=7;
+    require dst.length <= MAX_BYTES();
 
     uint64 inNonce1 = getInboundNonce(ID, dst);
         f(e, args);
@@ -115,8 +128,8 @@ rule retryPayLoadSucceedsOnlyOnce()
     bytes srcAddress;
     bytes payLoad;
 
-    require payLoad.length <= 7;
-    require srcAddress.length <= 7;
+    require payLoad.length <= MAX_BYTES();
+    require srcAddress.length <= MAX_BYTES();
 
     retryPayload(e, chainID, srcAddress, payLoad);
     retryPayload@withrevert(e2, chainID, srcAddress, payLoad);
@@ -124,24 +137,13 @@ rule retryPayLoadSucceedsOnlyOnce()
     assert lastReverted;
 }
 
-invariant NonceNotZero(uint16 ID, bytes dst, address destination)
-    bytes2Address(dst) == destination => getInboundNonce(ID, dst) != 0 && getOutboundNonce(ID, destination) != 0
-filtered {f -> !f.isView}
-{
-    preserved{
-    require dst.length <=7; //tool limitatiions
-    require getInboundNonce(ID, dst) < max_uint64 && getOutboundNonce(ID, destination) < max_uint64; //overflow!
-    }
-}
-
 rule oneInNonceAtATime(method f, uint16 ID, bytes dst)
-filtered {f -> !f.isView}
 {
     env e;
     calldataarg args;
     uint16 ID2; bytes dst2;
-    require dst.length <=7;
-    require dst2.length <=7;
+    require dst.length <= MAX_BYTES();
+    require dst2.length <= MAX_BYTES();
 
     uint64 inNonce1_A = getInboundNonce(ID, dst);
     uint64 inNonce2_A = getInboundNonce(ID2, dst2);
@@ -175,10 +177,10 @@ filtered {f -> !f.isView}
 rule receivePayLoadSuccessStep(uint16 srcChainID, uint64 nonce)
 {
     env e;
-    bytes payload; require payload.length <=7;
+    bytes payload; require payload.length <= MAX_BYTES();
     uint gasLimit;
     address dstAddress;
-    bytes srcAddress; require srcAddress.length <=7;
+    bytes srcAddress; require srcAddress.length <= MAX_BYTES();
 
     receivePayload(e, srcChainID, srcAddress, 
         dstAddress, nonce, gasLimit, payload);
@@ -192,10 +194,10 @@ rule receivePayLoadSuccessStep(uint16 srcChainID, uint64 nonce)
 rule sendReceiveEqualNonce(uint16 srcChainID, uint16 dstChainID)
 {
     env e;
-    bytes srcAddress; require srcAddress.length <= 7;
-    bytes _destination; require _destination.length <= 7;
-    bytes _adapterParams; require _adapterParams.length <= 7;
-    bytes _payload; require _payload.length <= 7;
+    bytes srcAddress; require srcAddress.length <= MAX_BYTES();
+    bytes _destination; require _destination.length <= MAX_BYTES();
+    bytes _adapterParams; require _adapterParams.length <= MAX_BYTES();
+    bytes _payload; require _payload.length <= MAX_BYTES();
     uint64 nonce;
     uint gasLimit;
     address dstAddress;
@@ -218,8 +220,8 @@ rule receiveAfterRetryFail(uint16 srcChainID)
 {
  env e;
 
-    bytes srcAddress; require srcAddress.length <= 7;
-    bytes payLoad;  require payLoad.length <= 7;
+    bytes srcAddress; require srcAddress.length <= MAX_BYTES();
+    bytes payLoad;  require payLoad.length <= MAX_BYTES();
     address dstAddress;
     uint64 nonce;
     uint gasLimit;
@@ -228,13 +230,19 @@ rule receiveAfterRetryFail(uint16 srcChainID)
     bool retryReverted = lastReverted;
 
     uint16 _srcChainID;
-    bytes _srcAddress; require _srcAddress.length <= 7;
+    bytes _srcAddress; require _srcAddress.length <= MAX_BYTES();
     forceResumeReceive(e,_srcChainID, _srcAddress);
 
     receivePayload@withrevert(e, srcChainID, srcAddress, dstAddress, nonce, gasLimit, payLoad);
     bool receiveReverted = lastReverted;
 
     assert retryReverted && !receiveReverted => _srcChainID == srcChainID && bytes2Address(_srcAddress) == bytes2Address(srcAddress);
+}
+
+rule bytes2AddressReach(bytes dst)
+{
+    address foo = bytes2Address(dst);
+    assert dst.length >= 32;
 }
 
 /*
