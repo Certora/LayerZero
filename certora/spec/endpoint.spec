@@ -2,6 +2,9 @@
 //                       Imports and multi-contracts                      //
 ////////////////////////////////////////////////////////////////////////////
 
+// Last verification (without receiveAfterRetryFail rule):
+// https://vaas-stg.certora.com/output/41958/2d66cd791481cf5550eb/?anonymousKey=094323d3c6e902fc8a1bf3c1c0021f922fbc7c52
+
 ////////////////////////////////////////////////////////////////////////////
 //                       Methods                                          //
 ////////////////////////////////////////////////////////////////////////////
@@ -20,7 +23,7 @@ methods{
         
     // Messaging library
     send(address, uint64, uint16, bytes, bytes, address, address, bytes) => NONDET
-    estimateFees(uint16, address , bytes, bool, bytes) returns (uint256, uint256) => NONDET
+    estimateFees(uint16, address, bytes, bool, bytes) returns (uint256, uint256) => NONDET
     setConfig(uint16, address, uint256, bytes)
     getConfig(uint16, address, uint256) returns (bytes)
 
@@ -45,19 +48,18 @@ definition MAX_BYTES() returns uint = 32;
 invariant sendReceiveSeparate()
     !(isReceivingPayload() && isSendingPayload())
 
-invariant NonceNotZero(uint16 ID, bytes dst, address destination)
-    bytes2Address(dst) == destination => 
-    ( getInboundNonce(ID, dst) != 0 && getOutboundNonce(ID, destination) != 0 )
+invariant NonceNotZero(uint16 ID, bytes dst, address src)
+    bytes2Address(dst) == src => 
+    ( getInboundNonce(ID, dst) != 0 && getOutboundNonce(ID, src) != 0 )
 {
     preserved
     {
         require dst.length <= MAX_BYTES(); // tool limitations
-        require getInboundNonce(ID, dst) < max_uint64 && getOutboundNonce(ID, destination) < max_uint64; //overflow!
+        require getInboundNonce(ID, dst) < max_uint64 && getOutboundNonce(ID, src) < max_uint64; //overflow!
     }
 }
 
 rule whoChangedStoredPayLoad(method f, uint16 ID, bytes dst)
-filtered {f -> !f.isView}
 {
     env e;
     calldataarg args;
@@ -69,11 +71,40 @@ filtered {f -> !f.isView}
         f(e, args);
     Length2, Address2, Hash2 = getStoredPayLoad(ID, dst);
     
-    assert Length1 == Length2 && Address1 == Address2 && Hash1 == Hash2;
+    assert !(Length1 == Length2 && Address1 == Address2 && Hash1 == Hash2)
+    => f.selector == retryPayload(uint16, bytes, bytes).selector ||
+    f.selector == forceResumeReceive(uint16,bytes).selector ;
 }
 
-rule whoChangedInNonce(method f, uint16 ID, bytes dst)
-filtered{f -> !f.isView}
+rule changedCorrectPayLoad(uint8 func, uint16 chainId, bytes dstAddress)
+{
+    env e;
+    uint16 _chainId; bytes _dstAddress;
+    require dstAddress.length <= MAX_BYTES();
+    require _dstAddress.length <= MAX_BYTES();
+    bytes _payload; require _payload.length <= MAX_BYTES();
+
+    uint64 Length1; uint64 Length2;
+    address Address1; address Address2;
+    bytes32 Hash1; bytes32 Hash2;
+
+    Length1, Address1, Hash1 = getStoredPayLoad(chainId, dstAddress);
+
+    if (func == 0){
+        retryPayload(e, _chainId, _dstAddress, _payload);
+    }
+    else {
+        forceResumeReceive(e, _chainId, _dstAddress);
+    }
+
+    Length2, Address2, Hash2 = getStoredPayLoad(chainId, dstAddress);
+
+    assert !(Length1 == Length2 && Address1 == Address2 && Hash1 == Hash2)
+    => (_chainId == chainId && 
+    bytes2Address(_dstAddress) == bytes2Address(dstAddress));
+}
+
+rule onlyReceiveChangedInNonce(method f, uint16 ID, bytes dst)
 {
     env e;
     calldataarg args;
@@ -83,12 +114,33 @@ filtered{f -> !f.isView}
         f(e, args);
     uint64 inNonce2 = getInboundNonce(ID, dst);
 
-    assert inNonce1 == inNonce2,
+    assert inNonce1 != inNonce2 => f.selector == 
+    receivePayload(uint16, bytes, address, uint64, uint256, bytes).selector,
     "function ${f} changed inbound Nonce";
 }
 
-rule whoChangedOutNonce(method f, uint16 ID, address dst)
-filtered {f -> !f.isView}
+rule receiveChangeCorrectInNonce(uint16 ID, bytes dst)
+{
+    env e;
+    bytes dst2; bytes payload;
+    uint gasLimit;
+    uint16 ID2;
+    uint64 nonce;
+    address dstAddress;
+
+    require dst.length <= MAX_BYTES();
+    require dst2.length <= MAX_BYTES();
+
+    uint64 inNonce1 = getInboundNonce(ID, dst);
+        receivePayload(e, ID2, dst2, dstAddress, nonce, gasLimit, payload);
+    uint64 inNonce2 = getInboundNonce(ID, dst);
+
+    assert inNonce1 != inNonce2 => 
+        (ID2 == ID &&
+        bytes2Address(dst) == bytes2Address(dst2)); 
+}
+
+rule onlySendChangedOutNonce(method f, uint16 ID, address dst)
 {
     env e;
     calldataarg args;
@@ -96,28 +148,62 @@ filtered {f -> !f.isView}
         f(e, args);
     uint64 outNonce2 = getOutboundNonce(ID, dst);
 
-    assert outNonce1 == outNonce2,
+    assert outNonce1 != outNonce2 => f.selector == 
+    send(uint16, bytes, bytes, address, address, bytes).selector,
     "function ${f} changed outbound Nonce";
 }
 
-rule whoChangedLibrary(method f, uint16 chainID)
+rule sendChangeCorrectOutNonce(uint16 dstChainID, address srcAddress)
+{
+    env e;
+    bytes destination;
+    uint16 dstChainID2;
+    bytes payload;
+    address refundAddress;
+    address zroPaymentAddress;
+    bytes adapterParams;
+
+    uint64 outNonce1 = getOutboundNonce(dstChainID, srcAddress);
+        send(e, dstChainID2, destination, payload, 
+            refundAddress, zroPaymentAddress, adapterParams);
+    uint64 outNonce2 = getOutboundNonce(dstChainID, srcAddress);
+
+    assert outNonce1 != outNonce2 => 
+        dstChainID == dstChainID2 &&
+        e.msg.sender == srcAddress;
+}
+
+rule onlyNewVersionChangedLibrary(method f, uint16 chainID)
 {
     env e;
     calldataarg args;
     address Lib1 = libraryLookup(e, chainID);
         f(e, args);
     address Lib2 = libraryLookup(e, chainID);
-    assert Lib1 == Lib2, "function ${f} changed library lookup";
+    assert Lib1 != Lib2 => f.selector == newVersion(address).selector,
+    "function ${f} changed library lookup";
 }
 
-rule whoChangedLibraryAddress(method f, address UA)
+rule setVersionChangedLibraryAddress(method f, address UA)
 {
     env e;
     calldataarg args;
     address Lib1 = getReceiveLibraryAddress(UA);
         f(e, args);
     address Lib2 = getReceiveLibraryAddress(UA);
-    assert Lib1 == Lib2, "function ${f} changed library address";
+    assert Lib1 != Lib2 => f.selector == setReceiveVersion(uint16).selector ||
+    f.selector == setDefaultReceiveVersion(uint16).selector,
+    "function ${f} changed library address";
+}
+
+rule changedLibraryAddressIntegrity(address UA)
+{
+    env e;
+    uint16 version;
+    address Lib1 = getReceiveLibraryAddress(UA);
+        setReceiveVersion(e, version);
+    address Lib2 = getReceiveLibraryAddress(UA);
+    assert Lib1 != Lib2 => e.msg.sender == UA;
 }
 
 rule retryPayLoadSucceedsOnlyOnce()
@@ -156,22 +242,22 @@ rule oneInNonceAtATime(method f, uint16 ID, bytes dst)
             ID == ID2 && bytes2Address(dst) == bytes2Address(dst2);
 }
 
-rule oneOutNonceAtATime(method f, uint16 ID, address dst)
+rule oneOutNonceAtATime(method f, uint16 ID, address src)
 filtered {f -> !f.isView}
 {
     env e;
     calldataarg args;
-    uint16 ID2; address dst2;
+    uint16 ID2; address src2;
 
-    uint64 inNonce1_A = getOutboundNonce(ID, dst);
-    uint64 inNonce2_A = getOutboundNonce(ID2, dst2);
+    uint64 inNonce1_A = getOutboundNonce(ID, src);
+    uint64 inNonce2_A = getOutboundNonce(ID2, src2);
         f(e, args);
-    uint64 inNonce1_B = getOutboundNonce(ID, dst);
-    uint64 inNonce2_B = getOutboundNonce(ID2, dst2);
+    uint64 inNonce1_B = getOutboundNonce(ID, src);
+    uint64 inNonce2_B = getOutboundNonce(ID2, src2);
     
     assert  inNonce1_A != inNonce1_B && 
             inNonce2_A != inNonce2_B =>
-            ID == ID2 && dst == dst2;
+            ID == ID2 && src == src2;
 }
 
 rule receivePayLoadSuccessStep(uint16 srcChainID, uint64 nonce)
@@ -211,9 +297,10 @@ rule sendReceiveEqualNonce(uint16 srcChainID, uint16 dstChainID)
     uint64 outNonce_B = getOutboundNonce(dstChainID, e.msg.sender);
     uint64 inNonce_B = getInboundNonce(srcChainID, srcAddress);
 
-    assert outNonce_A == inNonce_A => outNonce_B == inNonce_B && 
-            inNonce_A + 1 == inNonce_B &&
-            outNonce_A + 1 == outNonce_B;
+    assert outNonce_A == inNonce_A => 
+            ( outNonce_B == inNonce_B && 
+            ( inNonce_A < max_uint64 => inNonce_A + 1 == inNonce_B) &&
+            ( outNonce_A < max_uint64 => outNonce_A + 1 == outNonce_B) );
 }
 
 rule receiveAfterRetryFail(uint16 srcChainID)
@@ -226,18 +313,23 @@ rule receiveAfterRetryFail(uint16 srcChainID)
     uint64 nonce;
     uint gasLimit;
 
-    retryPayload@withrevert(e, srcChainID, srcAddress, payLoad);
-    bool retryReverted = lastReverted;
+    receivePayload@withrevert(e, srcChainID, srcAddress, 
+        dstAddress, nonce, gasLimit, payLoad);
+    require lastReverted;
 
     uint16 _srcChainID;
     bytes _srcAddress; require _srcAddress.length <= MAX_BYTES();
-    forceResumeReceive(e,_srcChainID, _srcAddress);
+    forceResumeReceive(e, _srcChainID, _srcAddress);
 
-    receivePayload@withrevert(e, srcChainID, srcAddress, dstAddress, nonce, gasLimit, payLoad);
+    receivePayload@withrevert(e, srcChainID, srcAddress, 
+        dstAddress, nonce + 1, gasLimit, payLoad);
     bool receiveReverted = lastReverted;
 
-    assert retryReverted && !receiveReverted => _srcChainID == srcChainID && bytes2Address(_srcAddress) == bytes2Address(srcAddress);
+    assert !receiveReverted => 
+        _srcChainID == srcChainID && 
+        bytes2Address(_srcAddress) == bytes2Address(srcAddress);
 }
+
 
 rule bytes2AddressReach(bytes dst)
 {
@@ -245,24 +337,6 @@ rule bytes2AddressReach(bytes dst)
     assert dst.length >= 32;
 }
 
-/*
-rule receivePayLoadCheck()
-{
-    env e;
-    calldataarg args;
-    uint64 Length1; uint64 Length2;
-    address Address1; address Address2;
-    bytes32 Hash1; bytes32 Hash2;
-    uint16 srcChainId; bytes srcAddress;
-    require srcAddress.length <= 7;
-
-    Length1, Address1, Hash1 = getStoredPayLoad(srcChainId, srcAddress);
-        receivePayload(e, args);
-    Length2, Address2, Hash2 = getStoredPayLoad(srcChainId, srcAddress);
-
-    assert Length1 == Length2 && Address1 == Address2 && Hash1 == Hash2;
-}
-*/
 ////////////////////////////////////////////////////////////////////////////
 //                       Functions                                        //
 ////////////////////////////////////////////////////////////////////////////
