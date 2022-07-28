@@ -35,7 +35,7 @@ methods{
 //                       Definitions                                      //
 ////////////////////////////////////////////////////////////////////////////
 
-definition MAX_BYTES() returns uint = 32;
+definition MAX_BYTES() returns uint = 96;
 
 ////////////////////////////////////////////////////////////////////////////
 //                       Ghosts                                           //
@@ -45,9 +45,12 @@ definition MAX_BYTES() returns uint = 32;
 //                       Rules                                            //
 ////////////////////////////////////////////////////////////////////////////
 
+
+// Cannot by receiving and sending payload simultaneously
 invariant sendReceiveSeparate()
     !(isReceivingPayload() && isSendingPayload())
 
+// inbound and outbound nonces are never zero.
 invariant NonceNotZero(uint16 ID, bytes dst, address src)
     bytes2Address(dst) == src => 
     ( getInboundNonce(ID, dst) != 0 && getOutboundNonce(ID, src) != 0 )
@@ -59,6 +62,7 @@ invariant NonceNotZero(uint16 ID, bytes dst, address src)
     }
 }
 
+// Only retryPayload and forceResumeReceive can change the stored payload.
 rule whoChangedStoredPayLoad(method f, uint16 ID, bytes dst)
 {
     env e;
@@ -76,6 +80,8 @@ rule whoChangedStoredPayLoad(method f, uint16 ID, bytes dst)
     f.selector == forceResumeReceive(uint16,bytes).selector ;
 }
 
+// The correct stored payload is changed according to the input arguments
+// of the acting functions.
 rule changedCorrectPayLoad(uint8 func, uint16 chainId, bytes dstAddress)
 {
     env e;
@@ -104,6 +110,7 @@ rule changedCorrectPayLoad(uint8 func, uint16 chainId, bytes dstAddress)
     bytes2Address(_dstAddress) == bytes2Address(dstAddress));
 }
 
+// Only recievePayLoad can change the inbound nonce.
 rule onlyReceiveChangedInNonce(method f, uint16 ID, bytes dst)
 {
     env e;
@@ -119,6 +126,7 @@ rule onlyReceiveChangedInNonce(method f, uint16 ID, bytes dst)
     "function ${f} changed inbound Nonce";
 }
 
+// recievePayLoad changes the correct inbound nonce according to its input arguments.
 rule receiveChangeCorrectInNonce(uint16 ID, bytes dst)
 {
     env e;
@@ -140,6 +148,7 @@ rule receiveChangeCorrectInNonce(uint16 ID, bytes dst)
         bytes2Address(dst) == bytes2Address(dst2)); 
 }
 
+// only send() function can change outbound nonce.
 rule onlySendChangedOutNonce(method f, uint16 ID, address dst)
 {
     env e;
@@ -153,6 +162,7 @@ rule onlySendChangedOutNonce(method f, uint16 ID, address dst)
     "function ${f} changed outbound Nonce";
 }
 
+// send() changes the correct outbound nonce according to its input arguments.
 rule sendChangeCorrectOutNonce(uint16 dstChainID, address srcAddress)
 {
     env e;
@@ -196,6 +206,8 @@ rule setVersionChangedLibraryAddress(method f, address UA)
     "function ${f} changed library address";
 }
 
+// The library address of an application cannot only changed by itself
+// (the msg.sender).
 rule changedLibraryAddressIntegrity(address UA)
 {
     env e;
@@ -206,6 +218,7 @@ rule changedLibraryAddressIntegrity(address UA)
     assert Lib1 != Lib2 => e.msg.sender == UA;
 }
 
+// One cannot successfully call retryPayLoad twice.
 rule retryPayLoadSucceedsOnlyOnce()
 {
     env e; env e2;
@@ -223,6 +236,7 @@ rule retryPayLoadSucceedsOnlyOnce()
     assert lastReverted;
 }
 
+// Only one value of inbound nonce is changed at a time.
 rule oneInNonceAtATime(method f, uint16 ID, bytes dst)
 {
     env e;
@@ -242,6 +256,7 @@ rule oneInNonceAtATime(method f, uint16 ID, bytes dst)
             ID == ID2 && bytes2Address(dst) == bytes2Address(dst2);
 }
 
+// Only one value of outbound nonce is changed at a time.
 rule oneOutNonceAtATime(method f, uint16 ID, address src)
 filtered {f -> !f.isView}
 {
@@ -260,6 +275,8 @@ filtered {f -> !f.isView}
             ID == ID2 && src == src2;
 }
 
+// If receivePayLoad succeeds for a nonce, then it must also succeed for the
+// subsequent nonce.
 rule receivePayLoadSuccessStep(uint16 srcChainID, uint64 nonce)
 {
     env e;
@@ -277,6 +294,7 @@ rule receivePayLoadSuccessStep(uint16 srcChainID, uint64 nonce)
     assert !lastReverted;
 }
 
+// The inbound and outbound nonces remain synced after a pair of send-receive call.
 rule sendReceiveEqualNonce(uint16 srcChainID, uint16 dstChainID)
 {
     env e;
@@ -330,6 +348,15 @@ rule receiveAfterRetryFail(uint16 srcChainID)
         bytes2Address(_srcAddress) == bytes2Address(srcAddress);
 }
 
+rule afterForceCannotRetry(uint16 srcChainID, bytes srcAddress)
+{
+    env e;
+    bytes payload;
+    require srcAddress.length <= MAX_BYTES();
+    forceResumeReceive(e, srcChainID, srcAddress);
+    retryPayload@withrevert(e, srcChainID, srcAddress, payload);
+    assert lastReverted;
+}
 
 rule bytes2AddressReach(bytes dst)
 {

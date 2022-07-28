@@ -6,8 +6,9 @@ certoraRun certora/harness/EndpointHarness.sol \
      --loop_iter 2 \
      --send_only \
      --rule_sanity basic \
+     --rule afterForceCannotRetry \
      --settings -byteMapHashingPrecision=7 \
-     --msg "layerZero"
+     --msg "layerZero afterForceCannotRetry"
 
     #certora/helpers/DummyERC20A.sol \
     #certora/helpers/DummyERC20B.sol \
