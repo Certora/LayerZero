@@ -15,7 +15,7 @@ contract EndpointHarness is Endpoint {
         return (sp.payloadLength, sp.dstAddress, sp.payloadHash);
     }
 
-    function bytes2Address(bytes memory address_bytes) external view returns (address)
+    function bytes2Address(bytes memory address_bytes) external pure returns (address)
     {
         return abi.decode(address_bytes, (address));
     }

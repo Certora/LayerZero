@@ -1,14 +1,14 @@
 certoraRun certora/harness/EndpointHarness.sol \
      --verify EndpointHarness:certora/spec/endpoint.spec \
      --solc solc7.6 \
-     --staging \
+     --cloud \
+     --loop_iter 3 \
      --optimistic_loop \
-     --loop_iter 2 \
      --send_only \
-     --rule_sanity basic \
-     --rule afterForceCannotRetry \
+     --rule_sanity \
+     --settings -optimisticFallback=true \
      --settings -byteMapHashingPrecision=7 \
-     --msg "layerZero afterForceCannotRetry"
+     --msg "layerZero New"
 
     #certora/helpers/DummyERC20A.sol \
     #certora/helpers/DummyERC20B.sol \
