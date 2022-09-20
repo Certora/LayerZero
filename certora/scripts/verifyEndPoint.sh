@@ -6,9 +6,8 @@ certoraRun certora/harness/EndpointHarness.sol \
      --optimistic_loop \
      --send_only \
      --rule_sanity \
-     --settings -optimisticFallback=true \
-     --settings -byteMapHashingPrecision=7 \
-     --msg "layerZero New"
+     --settings -optimisticFallback=true,-byteMapHashingPrecision=7 \
+     --msg "layerZero Endpoint"
 
     #certora/helpers/DummyERC20A.sol \
     #certora/helpers/DummyERC20B.sol \

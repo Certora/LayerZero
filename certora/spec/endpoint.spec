@@ -3,8 +3,7 @@
 ////////////////////////////////////////////////////////////////////////////
 
 // Last verification:
-// https://prover.certora.com/output/41958/c33478e0e1b920422807/?anonymousKey=39f2bfd360e4364462d8589ed560d350dcdd8597
-
+// https://prover.certora.com/output/41958/fa5b85da45a008df7bbf/?anonymousKey=cd9edea48ad173cb6fa9ae2d572cbba638b7bdac
 ////////////////////////////////////////////////////////////////////////////
 //                       Methods                                          //
 ////////////////////////////////////////////////////////////////////////////
@@ -28,7 +27,7 @@ methods{
     getConfig(uint16, address, uint256) returns (bytes)
 
     // Receiver
-    lzReceive(uint16, bytes, uint64, bytes) => NONDET
+    lzReceive(uint16, bytes, uint64, bytes) => DISPATCHER(true)
 }
 
 ////////////////////////////////////////////////////////////////////////////
@@ -82,7 +81,8 @@ rule whoChangedStoredPayLoad(method f, uint16 ID, bytes dst)
     
     assert !(Length1 == Length2 && Address1 == Address2 && Hash1 == Hash2)
     => f.selector == retryPayload(uint16, bytes, bytes).selector ||
-    f.selector == forceResumeReceive(uint16,bytes).selector ;
+        f.selector == forceResumeReceive(uint16,bytes).selector ||
+        f.selector == receivePayload(uint16, bytes, address, uint64, uint256, bytes).selector;
 }
 
 // The correct stored payload is changed according to the input arguments
@@ -291,13 +291,20 @@ rule receivePayLoadSuccessStep(uint16 srcChainID, uint64 nonce)
     address dstAddress;
     bytes srcAddress; require bytesLength(srcAddress) <= MAX_BYTES();
 
+    uint64 length;
+    address dstAddress2;
+    bytes32 hash;
+
     receivePayload(e, srcChainID, srcAddress, 
         dstAddress, nonce, gasLimit, payload);
+
+    length, dstAddress2, hash = getStoredPayLoad(srcChainID, srcAddress);
     
     receivePayload@withrevert(e, srcChainID, srcAddress, 
         dstAddress, nonce+1, gasLimit, payload);
 
-    assert !lastReverted;
+    assert lastReverted <=>  hash != 0;
+    assert lastReverted => dstAddress2 == dstAddress;
 }
 
 // The inbound and outbound nonces remain synced after a pair of send-receive call.
@@ -353,6 +360,28 @@ rule receiveAfterRetryFail(uint16 srcChainID)
     assert !receiveReverted => 
         (_srcChainID == srcChainID && 
         bytes2Address(_srcAddress) == bytes2Address(srcAddress));
+}
+
+rule payloadChangedReceiveReverts(uint16 srcChainID) 
+{
+    env e;
+    bytes srcAddress;   require bytesLength(srcAddress)<= MAX_BYTES();
+    bytes payLoad;  require bytesLength(payLoad) <= MAX_BYTES();
+    address dstAddress;
+    uint64 nonce;
+    uint gasLimit;
+
+    uint64 Length1; uint64 Length2;
+    address Address1; address Address2;
+    bytes32 Hash1; bytes32 Hash2;
+
+    Length1, Address1, Hash1 = getStoredPayLoad(srcChainID, srcAddress);
+        receivePayload(e, srcChainID, srcAddress, dstAddress, nonce, gasLimit, payLoad);
+    Length2, Address2, Hash2 = getStoredPayLoad(srcChainID, srcAddress);
+    bool payloadChanged = !(Length1 == Length2 && Address1 == Address2 && Hash1 == Hash2);
+
+    receivePayload@withrevert(e, srcChainID, srcAddress, dstAddress, nonce, gasLimit, payLoad);
+    assert payloadChanged => lastReverted;
 }
 
 rule afterForceCannotRetry(uint16 srcChainID, bytes srcAddress)
